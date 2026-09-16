@@ -66,6 +66,7 @@
   <canvas id="screen" width="960" height="540" aria-label="Comhstri nan Gaisgeach - Scottish pixel platform fighter"></canvas>
   <div id="hint">TAOBH-DUILLEIG &bull; CLICK THE SCREEN TO GIVE IT FOCUS</div>
 </div>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 "use strict";
 /* ================================================================
@@ -1502,27 +1503,78 @@ const Net = {
   status:'offline',            // offline | hosting | joined
   code:null,
   transport:null,
+  peer:null,
+  localSeat:null,
+  connections:[],
   seats:[null,null,null,null], // seat -> player name
   log:[],
 
   attachTransport(t){ this.transport = t; this.note('TRANSPORT ATTACHED'); },
   makeCode(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s='';
               for(let i=0;i<5;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; },
+  peerId(){ return 'comhstri-' + this.code.toLowerCase(); },
   host(){
-    this.code = this.makeCode(); this.status='hosting';
+    this.closePeer();
+    this.code = this.makeCode(); this.status='hosting'; this.localSeat=0;
     this.seats=[ 'YOU', null, null, null ];
     this.note('ROOM OPENED  '+this.code);
+    this.peer = new Peer(this.peerId());
+    this.peer.on('open', ()=>this.note('WAITING FOR PLAYERS'));
+    this.peer.on('connection', conn=>this.acceptConnection(conn));
+    this.peer.on('error', err=>this.note(err.type==='unavailable-id'?'ROOM CODE BUSY':'NETWORK ERROR'));
     if (this.transport) this.transport.host(this.code);
   },
   join(code){
-    this.code = code || this.makeCode(); this.status='joined';
+    this.closePeer();
+    this.code = code || this.makeCode(); this.status='joined'; this.localSeat=1;
     this.seats=[ 'HOST', 'YOU', null, null ];
     this.note('JOIN REQUEST  '+this.code);
+    this.peer = new Peer();
+    this.peer.on('open', ()=>{
+      const conn = this.peer.connect(this.peerId(), {reliable:true, serialization:'json'});
+      conn.on('open', ()=>{ this.connections=[conn]; conn.send({type:'hello'}); this.note('CONNECTED TO HOST'); });
+      conn.on('data', data=>this.handleData(conn,data));
+      conn.on('close', ()=>this.note('HOST DISCONNECTED'));
+      conn.on('error', ()=>this.note('COULD NOT JOIN ROOM'));
+    });
+    this.peer.on('error', err=>this.note(err.type==='peer-unavailable'?'ROOM NOT FOUND':'NETWORK ERROR'));
     if (this.transport) this.transport.join(this.code);
   },
-  leave(){ this.status='offline'; this.code=null; this.seats=[null,null,null,null]; this.note('LEFT ROOM'); },
+  acceptConnection(conn){
+    conn.on('open', ()=>{
+      const seat = this.seats.findIndex((name,i)=>i>0 && !name);
+      if (seat<0){ conn.send({type:'full'}); conn.close(); return; }
+      conn._seat=seat; this.seats[seat]='PLAYER '+(seat+1); this.connections.push(conn);
+      conn.send({type:'welcome', seat}); this.note('PLAYER '+(seat+1)+' CONNECTED');
+    });
+    conn.on('data', data=>this.handleData(conn,data));
+    conn.on('close', ()=>{
+      if (conn._seat!=null){ this.seats[conn._seat]=null; this.note('PLAYER DISCONNECTED'); }
+      this.connections=this.connections.filter(item=>item!==conn);
+    });
+  },
+  handleData(conn,data){
+    if (!data) return;
+    if (data.type==='hello' && this.status==='hosting') return;
+    if (data.type==='welcome'){ this.localSeat=data.seat; this.seats[0]='HOST'; this.seats[data.seat]='YOU'; return; }
+    if (data.type==='full'){ this.note('ROOM FULL'); return; }
+    if (data.seat==null) return;
+    this.receive(data);
+    if (this.status==='hosting') this.connections.forEach(item=>{ if (item!==conn && item.open) item.send(data); });
+  },
+  closePeer(){
+    this.connections.forEach(conn=>conn.close()); this.connections=[];
+    if (this.peer){ this.peer.destroy(); this.peer=null; }
+  },
+  leave(){ this.closePeer(); this.status='offline'; this.code=null; this.localSeat=null; this.seats=[null,null,null,null]; this.note('LEFT ROOM'); },
   /* called every frame during a fight; harmless while offline */
-  send(packet){ if (this.transport) this.transport.send(packet); },
+  send(packet){
+    if (this.transport) this.transport.send(packet);
+    if (!this.connections.length) return;
+    const data = Object.assign({type:'input'}, packet);
+    if (this.status==='hosting') this.connections.forEach(conn=>{ if (conn.open) conn.send(data); });
+    else if (this.connections[0].open) this.connections[0].send(data);
+  },
   /* call this from the transport when a remote packet arrives */
   receive(packet){
     if (!packet || packet.seat==null) return;
@@ -1575,6 +1627,7 @@ function drawLobby(){
   pxText('INVITE LINK', 400, 110, 2, '#c9a978');
   pxText(Net.inviteLink().slice(-46).toUpperCase(), 400, 132, 2, '#e7cfa3');
   pxText('STATUS: '+Net.status.toUpperCase(), 400, 168, 2, '#9fd45a');
+  if (Net.log[0]) pxText(Net.log[0], 400, 186, 2, '#f2c33c');
   // four seats
   for (let i=0;i<4;i++){
     const x=56+i*196;
@@ -1746,7 +1799,7 @@ const CONTROLS = [
 function makeFighter(slot, port, spawn){
   const c = slot.char;
   return {
-    port, char:c, cpu:slot.type==='cpu', remote:false, netInput:null,
+    port, char:c, cpu:slot.type==='cpu', remote:G.mode==='party' && slot.type!=='cpu' && port!==Net.localSeat, netInput:null,
     x:spawn[0], y:spawn[1], vx:0, vy:0, facing: spawn[0]<W/2?1:-1,
     w:c.w, h:c.h, onGround:false, jumps:2, pct:0, stocks:G.stocks,
     state:'fall', animT:0, atk:0, atkMax:1, atkDone:false, wpn:0,
