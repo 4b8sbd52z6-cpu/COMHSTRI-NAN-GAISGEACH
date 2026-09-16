@@ -1594,7 +1594,10 @@ const Net = {
       if (data.phase==='char' || data.phase==='stage' || data.phase==='fight') G.mode='party';
       this.seats=data.seats;
       if (data.slots && G.mode==='party'){
-        G.slots=data.slots.map(slot=>({type:slot.type, char:slot.char==null?null:CHARS[slot.char]}));
+        G.slots=data.slots.map((slot,i)=>({
+          type:data.seats[i]?'human':slot.type,
+          char:slot.char==null?null:CHARS[slot.char]
+        }));
       }
       if (data.phase==='char' && G.screen==='lobby'){ setScreen('char'); }
       if (data.phase==='stage' && G.screen==='char'){ setScreen('stage'); }
@@ -1643,7 +1646,11 @@ const Net = {
   receive(packet){
     if (!packet || packet.seat==null) return;
     const p = fighters.find(f=>f.port===packet.seat);
-    if (p && p.remote) p.netInput = packet.input;
+    if (p && p.remote && packet.input){
+      p.netInput = packet.input;
+      if (packet.input.atk) p.netAttack=2;
+      if (packet.input.ab) p.netAbility=2;
+    }
   },
   inviteLink(){ return location.origin + location.pathname + '?room=' + (this.code||'-----'); },
   copyInvite(){
@@ -1889,7 +1896,8 @@ function makeFighter(slot, port, spawn){
   const c = slot.char;
   return {
     port, char:c, cpu:slot.type==='cpu' && !(G.mode==='party' && Net.seats[port]),
-    remote:G.mode==='party' && Net.seats[port] && port!==Net.localSeat, netInput:null,
+    remote:G.mode==='party' && Net.seats[port] && port!==Net.localSeat,
+    netInput:null, netAttack:0, netAbility:0,
     x:spawn[0], y:spawn[1], vx:0, vy:0, facing: spawn[0]<W/2?1:-1,
     w:c.w, h:c.h, onGround:false, jumps:2, pct:0, stocks:G.stocks,
     state:'fall', animT:0, atk:0, atkMax:1, atkDone:false, wpn:0,
@@ -1910,7 +1918,14 @@ function startMatch(){
 
 /* ---------- input ---------- */
 function readInput(p){
-  if (p.remote && p.netInput) return p.netInput;
+  if (p.remote && p.netInput){
+    const input = Object.assign({},p.netInput);
+    input.atk = input.atk || p.netAttack>0;
+    input.ab = input.ab || p.netAbility>0;
+    if (p.netAttack>0) p.netAttack--;
+    if (p.netAbility>0) p.netAbility--;
+    return input;
+  }
   if (p.cpu) return botInput(p);
   const c = CONTROLS[p.port];
   return {
