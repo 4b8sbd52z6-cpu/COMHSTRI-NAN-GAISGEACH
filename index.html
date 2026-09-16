@@ -1514,6 +1514,7 @@ const Net = {
   localSeat:null,
   connections:[],
   connectTimer:null,
+  joinAttempts:0,
   seats:[null,null,null,null], // seat -> player name
   log:[],
 
@@ -1540,6 +1541,7 @@ const Net = {
     if (code.length!==5){ this.note('ROOM CODE MUST BE 5 CHARACTERS'); return; }
     this.closePeer();
     this.code = code; this.status='connecting'; this.localSeat=null;
+    this.joinAttempts=0;
     this.seats=[ 'PLAYER 1', null, null, null ];
     this.note('CONNECTING AS PLAYER 2');
     this.connectTimer=setTimeout(()=>{
@@ -1549,18 +1551,31 @@ const Net = {
     }, 8000);
     this.peer = new Peer(undefined, {host:'0.peerjs.com', port:443, secure:true, path:'/'});
     this.peer.on('open', ()=>{
-      const conn = this.peer.connect(this.peerId(), {reliable:true, serialization:'json'});
-      this.connections=[conn];
-      conn.on('open', ()=>{ conn.send({type:'hello'}); this.note('CONNECTED - WAITING FOR PLAYER 2 SLOT'); });
-      conn.on('data', data=>this.handleData(conn,data));
-      conn.on('close', ()=>this.note('HOST DISCONNECTED'));
-      conn.on('error', ()=>this.note('COULD NOT JOIN ROOM'));
+      this.connectToHost();
     });
     this.peer.on('error', err=>{
+      if (err.type==='peer-unavailable' && this.status==='connecting' && this.joinAttempts<3){
+        this.note('ROOM NOT READY - RETRYING');
+        setTimeout(()=>this.connectToHost(), 700);
+        return;
+      }
       if (this.connectTimer){ clearTimeout(this.connectTimer); this.connectTimer=null; }
       this.note(err.type==='peer-unavailable'?'ROOM NOT FOUND':'NETWORK ERROR');
     });
     if (this.transport) this.transport.join(this.code);
+  },
+  connectToHost(){
+    if (this.status!=='connecting' || !this.peer || !this.peer.open) return;
+    this.joinAttempts++;
+    const conn = this.peer.connect(this.peerId(), {reliable:true, serialization:'json'});
+      this.connections=[conn];
+      conn.on('open', ()=>{ conn.send({type:'hello'}); this.note('CONNECTED - WAITING FOR PLAYER 2 SLOT'); });
+      conn.on('data', data=>this.handleData(conn,data));
+      conn.on('close', ()=>this.note('HOST DISCONNECTED'));
+      conn.on('error', ()=>{
+        if (this.status==='connecting' && this.joinAttempts<3) setTimeout(()=>this.connectToHost(), 700);
+        else this.note('COULD NOT JOIN ROOM');
+      });
   },
   acceptConnection(conn){
     conn.on('open', ()=>{
