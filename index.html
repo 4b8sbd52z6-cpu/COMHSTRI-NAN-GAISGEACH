@@ -1511,6 +1511,7 @@ const Net = {
   code:null,
   transport:null,
   channel:null,
+  clientId:Math.random().toString(36).slice(2),
   localSeat:null,
   connections:[],
   connectTimer:null,
@@ -1534,7 +1535,9 @@ const Net = {
     this.channel.on('broadcast',{event:'room'}, ({payload})=>this.handleData(null,payload));
     return true;
   },
-  broadcast(data){ if (this.channel) this.channel.send({type:'broadcast',event:'room',payload:data}); },
+  broadcast(data){
+    if (this.channel) this.channel.send({type:'broadcast',event:'room',payload:Object.assign({from:this.clientId},data)});
+  },
   host(){
     this.code = this.makeCode(); this.status='hosting'; this.localSeat=0;
     this.closePeer();
@@ -1574,10 +1577,11 @@ const Net = {
   },
   handleData(conn,data){
     if (!data) return;
+    if (data.from===this.clientId || (data.to && data.to!==this.clientId)) return;
     if (data.type==='hello' && this.status==='hosting'){
       if (this.seats[1]){ this.broadcast({type:'full'}); return; }
       this.seats[1]='PLAYER 2';
-      this.broadcast({type:'welcome', seat:1, seats:this.seats});
+      this.broadcast({type:'welcome', seat:1, seats:this.seats, to:data.from});
       this.syncParty(); this.note('PLAYER 2 CONNECTED'); return;
     }
     if (data.type==='welcome'){
