@@ -1311,12 +1311,19 @@ function updateMenu(){
   const n = menu.items.length; if (!n) return;
   if (keyTap('ArrowDown')||keyTap('KeyS')){ menu.idx=(menu.idx+1)%n; SFX.move(); }
   if (keyTap('ArrowUp')  ||keyTap('KeyW')){ menu.idx=(menu.idx+n-1)%n; SFX.move(); }
+  let hovered = -1;
   menu.items.forEach((b,i)=>{
-    if (Mouse.x>b.x && Mouse.x<b.x+b.w && Mouse.y>b.y && Mouse.y<b.y+b.h){
-      if (menu.idx!==i){ menu.idx=i; SFX.move(); }
-      if (Mouse.clicked){ SFX.pick(); b.go(); }
-    }
+    if (Mouse.x>b.x && Mouse.x<b.x+b.w && Mouse.y>b.y && Mouse.y<b.y+b.h) hovered=i;
   });
+  if (hovered>=0){
+    if (menu.idx!==hovered){ menu.idx=hovered; SFX.move(); }
+    if (Mouse.clicked){
+      SFX.pick();
+      const clicked = menu.items[hovered];
+      clicked.go();
+      return;
+    }
+  }
   if (keyTap('Enter')||keyTap('Space')||keyTap('KeyE')){ SFX.pick(); menu.items[menu.idx].go(); }
   if (keyTap('Escape')||keyTap('Backspace')) goBack();
 }
@@ -1638,15 +1645,15 @@ const Net = {
 const urlRoom = new URLSearchParams(location.search).get('room');
 
 function buildLobby(){
-  const buttonY = 352, buttonW = 180;
+  const buttonY = 352, buttonW = 170;
   setMenu([
     {x:56,y:buttonY,w:buttonW,h:52,label: Net.status==='offline'?'HOST ROOM':'CLOSE ROOM',
       go:()=>{ Net.status==='offline' ? Net.host() : Net.leave(); buildLobby(); }},
-    {x:254,y:buttonY,w:buttonW,h:52,label:'JOIN ROOM',
+    {x:250,y:buttonY,w:buttonW,h:52,label:'JOIN ROOM',
       go:()=>{ const code = urlRoom || window.prompt('ENTER ROOM CODE'); if (code) Net.join(code.trim().toUpperCase()); buildLobby(); }},
-    {x:452,y:buttonY,w:buttonW,h:52,label:'COPY LINK',
+    {x:444,y:buttonY,w:buttonW,h:52,label:'COPY LINK',
       go:()=>Net.copyInvite()},
-    {x:650,y:buttonY,w:buttonW,h:52,label:'START',
+    {x:638,y:buttonY,w:buttonW,h:52,label:'START',
       go:()=>{
         if (Net.status!=='hosting'){ Net.note('HOST STARTS THE MATCH'); return; }
         G.mode='party'; Net.syncParty(); setScreen('char'); Net.syncParty();
