@@ -209,6 +209,11 @@ function pxText(str, x, y, s, col, align='left', shadow=null, shadowOff=1){
 const Keys = {};
 const Pressed = {};          // one-shot "was pressed this frame"
 const Mouse = {x:0, y:0, down:false, clicked:false};
+function updateMousePosition(e){
+  const r = cv.getBoundingClientRect();
+  Mouse.x = (e.clientX-r.left) * (W/r.width);
+  Mouse.y = (e.clientY-r.top ) * (H/r.height);
+}
 
 addEventListener('keydown', e=>{
   if (!Keys[e.code]) Pressed[e.code] = true;
@@ -218,11 +223,12 @@ addEventListener('keydown', e=>{
 });
 addEventListener('keyup',   e=>{ Keys[e.code] = false; });
 cv.addEventListener('mousemove', e=>{
-  const r = cv.getBoundingClientRect();
-  Mouse.x = (e.clientX-r.left) * (W/r.width);
-  Mouse.y = (e.clientY-r.top ) * (H/r.height);
+  updateMousePosition(e);
 });
-cv.addEventListener('mousedown', e=>{ Mouse.down=true; Mouse.clicked=true; Audio8.unlock(); e.preventDefault(); });
+cv.addEventListener('mousedown', e=>{
+  updateMousePosition(e);
+  Mouse.down=true; Mouse.clicked=true; Audio8.unlock(); e.preventDefault();
+});
 addEventListener('mouseup',  ()=>{ Mouse.down=false; });
 cv.addEventListener('contextmenu', e=>e.preventDefault());
 
@@ -1524,18 +1530,37 @@ const Net = {
     if (p && p.remote) p.netInput = packet.input;
   },
   inviteLink(){ return location.origin + location.pathname + '?room=' + (this.code||'-----'); },
+  copyInvite(){
+    const link = this.inviteLink();
+    if (navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(link).then(()=>this.note('INVITE LINK COPIED'))
+        .catch(()=>this.copyInviteFallback(link));
+    } else this.copyInviteFallback(link);
+  },
+  copyInviteFallback(link){
+    const field = document.createElement('textarea');
+    field.value = link; field.setAttribute('readonly','');
+    field.style.position='fixed'; field.style.opacity='0';
+    document.body.appendChild(field); field.select();
+    try { document.execCommand('copy'); this.note('INVITE LINK COPIED'); }
+    catch (_) { this.note('COPY FAILED - USE ROOM CODE'); }
+    document.body.removeChild(field);
+  },
   note(m){ this.log.unshift(m); if (this.log.length>5) this.log.pop(); }
 };
 /* if someone opens an invite link we pre-fill the code */
 const urlRoom = new URLSearchParams(location.search).get('room');
 
 function buildLobby(){
+  const buttonY = 352, buttonW = 180;
   setMenu([
-    {x:56,y:352,w:250,h:52,label: Net.status==='offline'?'HOST ROOM':'CLOSE ROOM',
+    {x:56,y:buttonY,w:buttonW,h:52,label: Net.status==='offline'?'HOST ROOM':'CLOSE ROOM',
       go:()=>{ Net.status==='offline' ? Net.host() : Net.leave(); buildLobby(); }},
-    {x:322,y:352,w:250,h:52,label:'JOIN ROOM',
-      go:()=>{ Net.join(urlRoom); buildLobby(); }},
-    {x:588,y:352,w:250,h:52,label:'START',
+    {x:254,y:buttonY,w:buttonW,h:52,label:'JOIN ROOM',
+      go:()=>{ const code = urlRoom || window.prompt('ENTER ROOM CODE'); if (code) Net.join(code.trim().toUpperCase()); buildLobby(); }},
+    {x:452,y:buttonY,w:buttonW,h:52,label:'COPY LINK',
+      go:()=>Net.copyInvite()},
+    {x:650,y:buttonY,w:buttonW,h:52,label:'START',
       go:()=>{ G.mode='party'; setScreen('char'); }},
     {x:W/2-140,y:434,w:280,h:44,label:'BACK', go:()=>setScreen('play')}
   ]);
