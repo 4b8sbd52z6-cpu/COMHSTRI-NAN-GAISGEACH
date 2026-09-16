@@ -1547,7 +1547,7 @@ const Net = {
       const seat = this.seats.findIndex((name,i)=>i>0 && !name);
       if (seat<0){ conn.send({type:'full'}); conn.close(); return; }
       conn._seat=seat; this.seats[seat]='PLAYER '+(seat+1); this.connections.push(conn);
-      conn.send({type:'welcome', seat}); this.note('PLAYER '+(seat+1)+' CONNECTED');
+      conn.send({type:'welcome', seat}); this.syncParty(conn); this.note('PLAYER '+(seat+1)+' CONNECTED');
     });
     conn.on('data', data=>this.handleData(conn,data));
     conn.on('close', ()=>{
@@ -1560,6 +1560,24 @@ const Net = {
     if (data.type==='hello' && this.status==='hosting') return;
     if (data.type==='welcome'){ this.localSeat=data.seat; this.seats[0]='HOST'; this.seats[data.seat]='YOU'; return; }
     if (data.type==='full'){ this.note('ROOM FULL'); return; }
+    if (data.type==='party-state'){
+      if (data.phase==='char' || data.phase==='stage' || data.phase==='fight') G.mode='party';
+      this.seats=data.seats;
+      if (data.slots && G.mode==='party'){
+        G.slots=data.slots.map(slot=>({type:slot.type, char:slot.char==null?null:CHARS[slot.char]}));
+      }
+      if (data.phase==='char' && G.screen==='lobby'){ setScreen('char'); }
+      if (data.phase==='stage' && G.screen==='char'){ setScreen('stage'); }
+      if (data.phase==='fight' && G.screen!=='fight'){ G.stage=data.stage; startMatch(); }
+      return;
+    }
+    if (data.type==='party-selection' && this.status==='hosting'){
+      if (G.mode==='party' && G.slots[data.seat]){
+        G.slots[data.seat].char=CHARS[data.char];
+        this.syncParty();
+      }
+      return;
+    }
     if (data.seat==null) return;
     this.receive(data);
     if (this.status==='hosting') this.connections.forEach(item=>{ if (item!==conn && item.open) item.send(data); });
@@ -1576,6 +1594,20 @@ const Net = {
     const data = Object.assign({type:'input'}, packet);
     if (this.status==='hosting') this.connections.forEach(conn=>{ if (conn.open) conn.send(data); });
     else if (this.connections[0].open) this.connections[0].send(data);
+  },
+  syncParty(conn){
+    if (this.status!=='hosting' || !G.slots) return;
+    const state={type:'party-state', seats:this.seats,
+      slots:G.slots.map(slot=>({type:slot.type, char:slot.char&&slot.char.id})),
+      phase:G.screen==='lobby'?'lobby':G.screen==='char'?'char':G.screen==='stage'?'stage':G.screen==='fight'?'fight':'lobby',
+      stage:G.stage};
+    const targets=conn?[conn]:this.connections;
+    targets.forEach(item=>{ if (item.open) item.send(state); });
+  },
+  startPartyStage(stage){
+    G.stage=stage; this.connections.forEach(conn=>{ if (conn.open) conn.send({type:'party-state', seats:this.seats,
+      slots:G.slots.map(slot=>({type:slot.type, char:slot.char&&slot.char.id})), phase:'fight', stage}); });
+    startMatch();
   },
   /* call this from the transport when a remote packet arrives */
   receive(packet){
@@ -1615,7 +1647,10 @@ function buildLobby(){
     {x:452,y:buttonY,w:buttonW,h:52,label:'COPY LINK',
       go:()=>Net.copyInvite()},
     {x:650,y:buttonY,w:buttonW,h:52,label:'START',
-      go:()=>{ G.mode='party'; setScreen('char'); }},
+      go:()=>{
+        if (Net.status!=='hosting'){ Net.note('HOST STARTS THE MATCH'); return; }
+        G.mode='party'; Net.syncParty(); setScreen('char'); Net.syncParty();
+      }},
     {x:W/2-140,y:434,w:280,h:44,label:'BACK', go:()=>setScreen('play')}
   ]);
 }
@@ -1666,10 +1701,19 @@ function nextOpenSlot(from){
   return -1;
 }
 function assign(charId){
-  const k = nextOpenSlot(G.pick);
+  let k = nextOpenSlot(G.pick);
+  if (G.mode==='party'){
+    const own = Net.localSeat==null ? 0 : Net.localSeat;
+    if (G.slots[own] && G.slots[own].type==='human' && !G.slots[own].char) k=own;
+    else if (Net.status==='hosting') k=G.slots.findIndex(slot=>slot.type==='cpu' && !slot.char);
+  }
   if (k<0){ SFX.deny(); return; }
   G.slots[k].char = CHARS[charId];
   G.pick = (k+1)%4;
+  if (G.mode==='party'){
+    if (Net.status==='hosting') Net.syncParty();
+    else Net.connections.forEach(conn=>{ if (conn.open) conn.send({type:'party-selection', seat:Net.localSeat, char:charId}); });
+  }
   SFX.pick();
 }
 function readyToFight(){
@@ -1694,14 +1738,19 @@ function updateCharSelect(){
       const s = G.slots[i];
       const cycle = (G.mode==='duel') ? ['human','cpu'] : ['human','cpu','off'];
       if (i===0){ SFX.deny(); }                        // player one always plays
+            else if (G.mode==='party' && Net.seats[i]){ SFX.deny(); }
       else { s.type = cycle[(cycle.indexOf(s.type)+1)%cycle.length];
-             if (s.type==='off') s.char=null; SFX.move(); }
+              if (s.type==='off') s.char=null;
+              if (G.mode==='party' && Net.status==='hosting') Net.syncParty();
+              SFX.move(); }
     }
   }
   const go = {x:W/2-150,y:442,w:300,h:52};
   const over = Mouse.x>go.x&&Mouse.x<go.x+go.w&&Mouse.y>go.y&&Mouse.y<go.y+go.h;
   if ((over&&Mouse.clicked) || keyTap('KeyF')){
-    if (readyToFight()){ SFX.pick(); setScreen('stage'); } else SFX.deny();
+    if (readyToFight() && (G.mode!=='party' || Net.status==='hosting')){
+      SFX.pick(); setScreen('stage'); if (G.mode==='party') Net.syncParty();
+    } else SFX.deny();
   }
 }
 function drawCharSelect(){
@@ -1756,10 +1805,18 @@ function updateStageSelect(){
     const r=stageRect(i);
     if (Mouse.x>r.x&&Mouse.x<r.x+r.w&&Mouse.y>r.y&&Mouse.y<r.y+r.h){
       if (G.cursor!==i){ G.cursor=i; SFX.move(); }
-      if (Mouse.clicked){ G.stage=i; SFX.pick(); startMatch(); }
+      if (Mouse.clicked){
+        G.stage=i; SFX.pick();
+        if (G.mode==='party' && Net.status==='hosting') Net.startPartyStage(i);
+        else if (G.mode!=='party') startMatch();
+      }
     }
   }
-  if (keyTap('Enter')||keyTap('Space')||keyTap('KeyE')){ G.stage=G.cursor; SFX.pick(); startMatch(); }
+  if (keyTap('Enter')||keyTap('Space')||keyTap('KeyE')){
+    G.stage=G.cursor; SFX.pick();
+    if (G.mode==='party' && Net.status==='hosting') Net.startPartyStage(G.stage);
+    else if (G.mode!=='party') startMatch();
+  }
   if (keyTap('Escape')) goBack();
 }
 function drawStageSelect(){
@@ -2430,8 +2487,8 @@ function frame(){
 /* ---- boot ---- */
 Audio8.setVolume(G.volume);
 loadArt();
-if (urlRoom) Net.join(urlRoom);
-setScreen('home');
+if (urlRoom){ G.mode='party'; Net.join(urlRoom.trim().toUpperCase()); setScreen('lobby'); }
+else setScreen('home');
 frame();
 </script>
 </body>
