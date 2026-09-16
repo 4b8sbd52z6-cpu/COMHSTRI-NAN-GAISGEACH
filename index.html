@@ -66,7 +66,7 @@
   <canvas id="screen" width="960" height="540" aria-label="Comhstri nan Gaisgeach - Scottish pixel platform fighter"></canvas>
   <div id="hint">TAOBH-DUILLEIG &bull; CLICK THE SCREEN TO GIVE IT FOCUS</div>
 </div>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 "use strict";
 /* ================================================================
@@ -1510,38 +1510,49 @@ const Net = {
   status:'offline',            // offline | hosting | connecting | joined
   code:null,
   transport:null,
-  peer:null,
+  channel:null,
   localSeat:null,
   connections:[],
   connectTimer:null,
-  joinAttempts:0,
   seats:[null,null,null,null], // seat -> player name
   log:[],
+
+  supabaseUrl:'https://hwpjwgounkttsdnulbsw.supabase.co',
+  supabaseKey:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3cGp3Z291bmt0dHNkbnVsc3ciLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc4OTU3NDU5OCwiZXhwIjoyMTA1MTUwNTk4fQ.91bZgbMRYuBYUcpxoVho24cIeONH8XfazzdNNEsOwMU',
+  realtime:null,
 
   attachTransport(t){ this.transport = t; this.note('TRANSPORT ATTACHED'); },
   makeCode(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s='';
               for(let i=0;i<5;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; },
   normalizeCode(code){ return String(code||'').trim().toUpperCase().replace(/[^A-Z2-9]/g,'').slice(0,5); },
-  peerId(){ return 'comhstri-room-' + this.code.toLowerCase(); },
+  channelName(){ return 'comhstri-room-' + this.code.toLowerCase(); },
+  setupChannel(){
+    if (!window.supabase){ this.note('SUPABASE LIBRARY UNAVAILABLE'); return false; }
+    if (!this.realtime) this.realtime=window.supabase.createClient(this.supabaseUrl,this.supabaseKey);
+    if (this.channel) this.realtime.removeChannel(this.channel);
+    this.channel=this.realtime.channel(this.channelName());
+    this.channel.on('broadcast',{event:'room'}, ({payload})=>this.handleData(null,payload));
+    return true;
+  },
+  broadcast(data){ if (this.channel) this.channel.send({type:'broadcast',event:'room',payload:data}); },
   host(){
-    if (typeof Peer==='undefined'){ this.note('NETWORK LIBRARY UNAVAILABLE'); return; }
-    this.closePeer();
     this.code = this.makeCode(); this.status='hosting'; this.localSeat=0;
+    this.closePeer();
+    if (!this.setupChannel()) return;
     this.seats=[ 'PLAYER 1', null, null, null ];
     this.note('ROOM OPENED  '+this.code);
-    this.peer = new Peer(this.peerId(), {host:'0.peerjs.com', port:443, secure:true, path:'/'});
-    this.peer.on('open', ()=>this.note('PLAYER 1 READY - WAITING FOR PLAYER 2'));
-    this.peer.on('connection', conn=>this.acceptConnection(conn));
-    this.peer.on('error', err=>this.note(err.type==='unavailable-id'?'ROOM CODE BUSY':'NETWORK ERROR'));
+    this.channel.subscribe((status)=>{
+      if (status==='SUBSCRIBED') this.note('PLAYER 1 READY - WAITING FOR PLAYER 2');
+      if (status==='CHANNEL_ERROR') this.note('ROOM SERVER ERROR');
+    });
     if (this.transport) this.transport.host(this.code);
   },
   join(code){
-    if (typeof Peer==='undefined'){ this.note('NETWORK LIBRARY UNAVAILABLE'); return; }
     code=this.normalizeCode(code);
     if (code.length!==5){ this.note('ROOM CODE MUST BE 5 CHARACTERS'); return; }
     this.closePeer();
     this.code = code; this.status='connecting'; this.localSeat=null;
-    this.joinAttempts=0;
+    if (!this.setupChannel()) return;
     this.seats=[ 'PLAYER 1', null, null, null ];
     this.note('CONNECTING AS PLAYER 2');
     this.connectTimer=setTimeout(()=>{
@@ -1549,50 +1560,26 @@ const Net = {
         this.closePeer(); this.status='offline'; this.note('CONNECTION TIMED OUT - TRY AGAIN');
       }
     }, 8000);
-    this.peer = new Peer(undefined, {host:'0.peerjs.com', port:443, secure:true, path:'/'});
-    this.peer.on('open', ()=>{
-      this.connectToHost();
-    });
-    this.peer.on('error', err=>{
-      if (err.type==='peer-unavailable' && this.status==='connecting' && this.joinAttempts<3){
-        this.note('ROOM NOT READY - RETRYING');
-        setTimeout(()=>this.connectToHost(), 700);
-        return;
+    this.channel.subscribe((status)=>{
+      if (status==='SUBSCRIBED'){
+        this.broadcast({type:'hello'});
+        this.note('CONNECTED - WAITING FOR PLAYER 2 SLOT');
       }
-      if (this.connectTimer){ clearTimeout(this.connectTimer); this.connectTimer=null; }
-      this.note(err.type==='peer-unavailable'?'ROOM NOT FOUND':'NETWORK ERROR');
+      if (status==='CHANNEL_ERROR' || status==='TIMED_OUT'){
+        if (this.connectTimer){ clearTimeout(this.connectTimer); this.connectTimer=null; }
+        this.status='offline'; this.note('ROOM NOT FOUND - CHECK THE CODE');
+      }
     });
     if (this.transport) this.transport.join(this.code);
   },
-  connectToHost(){
-    if (this.status!=='connecting' || !this.peer || !this.peer.open) return;
-    this.joinAttempts++;
-    const conn = this.peer.connect(this.peerId(), {reliable:true, serialization:'json'});
-      this.connections=[conn];
-      conn.on('open', ()=>{ conn.send({type:'hello'}); this.note('CONNECTED - WAITING FOR PLAYER 2 SLOT'); });
-      conn.on('data', data=>this.handleData(conn,data));
-      conn.on('close', ()=>this.note('HOST DISCONNECTED'));
-      conn.on('error', ()=>{
-        if (this.status==='connecting' && this.joinAttempts<3) setTimeout(()=>this.connectToHost(), 700);
-        else this.note('COULD NOT JOIN ROOM');
-      });
-  },
-  acceptConnection(conn){
-    conn.on('open', ()=>{
-      const seat = this.seats.findIndex((name,i)=>i>0 && !name);
-      if (seat<0){ conn.send({type:'full'}); conn.close(); return; }
-      conn._seat=seat; this.seats[seat]='PLAYER '+(seat+1); this.connections.push(conn);
-      conn.send({type:'welcome', seat, seats:this.seats}); this.syncParty(conn); this.note('PLAYER '+(seat+1)+' CONNECTED');
-    });
-    conn.on('data', data=>this.handleData(conn,data));
-    conn.on('close', ()=>{
-      if (conn._seat!=null){ this.seats[conn._seat]=null; this.note('PLAYER DISCONNECTED'); }
-      this.connections=this.connections.filter(item=>item!==conn);
-    });
-  },
   handleData(conn,data){
     if (!data) return;
-    if (data.type==='hello' && this.status==='hosting') return;
+    if (data.type==='hello' && this.status==='hosting'){
+      if (this.seats[1]){ this.broadcast({type:'full'}); return; }
+      this.seats[1]='PLAYER 2';
+      this.broadcast({type:'welcome', seat:1, seats:this.seats});
+      this.syncParty(); this.note('PLAYER 2 CONNECTED'); return;
+    }
     if (data.type==='welcome'){
       if (this.connectTimer){ clearTimeout(this.connectTimer); this.connectTimer=null; }
       this.localSeat=data.seat; this.status='joined'; this.seats=data.seats||['PLAYER 1','PLAYER 2',null,null];
@@ -1619,34 +1606,29 @@ const Net = {
     }
     if (data.seat==null) return;
     this.receive(data);
-    if (this.status==='hosting') this.connections.forEach(item=>{ if (item!==conn && item.open) item.send(data); });
   },
   closePeer(){
     if (this.connectTimer){ clearTimeout(this.connectTimer); this.connectTimer=null; }
-    this.connections.forEach(conn=>conn.close()); this.connections=[];
-    if (this.peer){ this.peer.destroy(); this.peer=null; }
+    if (this.channel && this.realtime) this.realtime.removeChannel(this.channel);
+    this.channel=null; this.connections=[];
   },
   leave(){ this.closePeer(); this.status='offline'; this.code=null; this.localSeat=null; this.seats=[null,null,null,null]; this.note('LEFT ROOM'); },
   /* called every frame during a fight; harmless while offline */
   send(packet){
     if (this.transport) this.transport.send(packet);
-    if (!this.connections.length) return;
-    const data = Object.assign({type:'input'}, packet);
-    if (this.status==='hosting') this.connections.forEach(conn=>{ if (conn.open) conn.send(data); });
-    else if (this.connections[0].open) this.connections[0].send(data);
+    this.broadcast(Object.assign({type:'input'}, packet));
   },
-  syncParty(conn){
+  syncParty(){
     if (this.status!=='hosting' || !G.slots) return;
     const state={type:'party-state', seats:this.seats,
       slots:G.slots.map(slot=>({type:slot.type, char:slot.char&&slot.char.id})),
       phase:G.screen==='lobby'?'lobby':G.screen==='char'?'char':G.screen==='stage'?'stage':G.screen==='fight'?'fight':'lobby',
       stage:G.stage};
-    const targets=conn?[conn]:this.connections;
-    targets.forEach(item=>{ if (item.open) item.send(state); });
+    this.broadcast(state);
   },
   startPartyStage(stage){
-    G.stage=stage; this.connections.forEach(conn=>{ if (conn.open) conn.send({type:'party-state', seats:this.seats,
-      slots:G.slots.map(slot=>({type:slot.type, char:slot.char&&slot.char.id})), phase:'fight', stage}); });
+    G.stage=stage; this.broadcast({type:'party-state', seats:this.seats,
+      slots:G.slots.map(slot=>({type:slot.type, char:slot.char&&slot.char.id})), phase:'fight', stage});
     startMatch();
   },
   /* call this from the transport when a remote packet arrives */
@@ -1752,7 +1734,7 @@ function assign(charId){
   G.pick = (k+1)%4;
   if (G.mode==='party'){
     if (Net.status==='hosting') Net.syncParty();
-    else Net.connections.forEach(conn=>{ if (conn.open) conn.send({type:'party-selection', seat:Net.localSeat, char:charId}); });
+    else Net.broadcast({type:'party-selection', seat:Net.localSeat, char:charId});
   }
   SFX.pick();
 }
