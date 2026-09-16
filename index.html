@@ -1507,7 +1507,7 @@ function drawMore(){
        // then, whenever a packet lands:  Net.receive(packet)
    ============================================================= */
 const Net = {
-  status:'offline',            // offline | hosting | joined
+  status:'offline',            // offline | hosting | connecting | joined
   code:null,
   transport:null,
   peer:null,
@@ -1519,29 +1519,33 @@ const Net = {
   attachTransport(t){ this.transport = t; this.note('TRANSPORT ATTACHED'); },
   makeCode(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s='';
               for(let i=0;i<5;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; },
-  peerId(){ return 'comhstri-' + this.code.toLowerCase(); },
+  normalizeCode(code){ return String(code||'').trim().toUpperCase().replace(/[^A-Z2-9]/g,'').slice(0,5); },
+  peerId(){ return 'comhstri-room-' + this.code.toLowerCase(); },
   host(){
     if (typeof Peer==='undefined'){ this.note('NETWORK LIBRARY UNAVAILABLE'); return; }
     this.closePeer();
     this.code = this.makeCode(); this.status='hosting'; this.localSeat=0;
-    this.seats=[ 'YOU', null, null, null ];
+    this.seats=[ 'PLAYER 1', null, null, null ];
     this.note('ROOM OPENED  '+this.code);
     this.peer = new Peer(this.peerId());
-    this.peer.on('open', ()=>this.note('WAITING FOR PLAYERS'));
+    this.peer.on('open', ()=>this.note('PLAYER 1 READY - WAITING FOR PLAYER 2'));
     this.peer.on('connection', conn=>this.acceptConnection(conn));
     this.peer.on('error', err=>this.note(err.type==='unavailable-id'?'ROOM CODE BUSY':'NETWORK ERROR'));
     if (this.transport) this.transport.host(this.code);
   },
   join(code){
     if (typeof Peer==='undefined'){ this.note('NETWORK LIBRARY UNAVAILABLE'); return; }
+    code=this.normalizeCode(code);
+    if (code.length!==5){ this.note('ROOM CODE MUST BE 5 CHARACTERS'); return; }
     this.closePeer();
-    this.code = code || this.makeCode(); this.status='joined'; this.localSeat=1;
-    this.seats=[ 'HOST', 'YOU', null, null ];
-    this.note('JOIN REQUEST  '+this.code);
+    this.code = code; this.status='connecting'; this.localSeat=null;
+    this.seats=[ 'PLAYER 1', null, null, null ];
+    this.note('CONNECTING AS PLAYER 2');
     this.peer = new Peer();
     this.peer.on('open', ()=>{
       const conn = this.peer.connect(this.peerId(), {reliable:true, serialization:'json'});
-      conn.on('open', ()=>{ this.connections=[conn]; conn.send({type:'hello'}); this.note('CONNECTED TO HOST'); });
+      this.connections=[conn];
+      conn.on('open', ()=>{ conn.send({type:'hello'}); this.note('CONNECTED - WAITING FOR PLAYER 2 SLOT'); });
       conn.on('data', data=>this.handleData(conn,data));
       conn.on('close', ()=>this.note('HOST DISCONNECTED'));
       conn.on('error', ()=>this.note('COULD NOT JOIN ROOM'));
@@ -1554,7 +1558,7 @@ const Net = {
       const seat = this.seats.findIndex((name,i)=>i>0 && !name);
       if (seat<0){ conn.send({type:'full'}); conn.close(); return; }
       conn._seat=seat; this.seats[seat]='PLAYER '+(seat+1); this.connections.push(conn);
-      conn.send({type:'welcome', seat}); this.syncParty(conn); this.note('PLAYER '+(seat+1)+' CONNECTED');
+      conn.send({type:'welcome', seat, seats:this.seats}); this.syncParty(conn); this.note('PLAYER '+(seat+1)+' CONNECTED');
     });
     conn.on('data', data=>this.handleData(conn,data));
     conn.on('close', ()=>{
@@ -1565,7 +1569,10 @@ const Net = {
   handleData(conn,data){
     if (!data) return;
     if (data.type==='hello' && this.status==='hosting') return;
-    if (data.type==='welcome'){ this.localSeat=data.seat; this.seats[0]='HOST'; this.seats[data.seat]='YOU'; return; }
+    if (data.type==='welcome'){
+      this.localSeat=data.seat; this.status='joined'; this.seats=data.seats||['PLAYER 1','PLAYER 2',null,null];
+      this.seats[this.localSeat]='PLAYER 2'; this.note('YOU ARE PLAYER 2'); return;
+    }
     if (data.type==='full'){ this.note('ROOM FULL'); return; }
     if (data.type==='party-state'){
       if (data.phase==='char' || data.phase==='stage' || data.phase==='fight') G.mode='party';
@@ -1619,7 +1626,7 @@ const Net = {
   /* call this from the transport when a remote packet arrives */
   receive(packet){
     if (!packet || packet.seat==null) return;
-    const p = fighters[packet.seat];
+    const p = fighters.find(f=>f.port===packet.seat);
     if (p && p.remote) p.netInput = packet.input;
   },
   inviteLink(){ return location.origin + location.pathname + '?room=' + (this.code||'-----'); },
