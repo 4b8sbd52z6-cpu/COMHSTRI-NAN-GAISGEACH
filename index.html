@@ -2405,10 +2405,19 @@ function showVictory(){
   const arcadeGoing = G.mode==='arcade' && !win.cpu && (G.arcadeRound||1)<3;
   const items=[];
   if (arcadeGoing) items.push({x:40,y:470,w:250,h:48,label:'NEXT BOUT', go:nextArcadeBout});
-  items.push({x:arcadeGoing?302:40, y:470, w:250, h:48, label:'REMATCH', go:()=>startMatch()});
+  items.push({x:arcadeGoing?302:40, y:470, w:250, h:48, label:'REMATCH', go:rematch});
   items.push({x:arcadeGoing?564:302, y:470, w:250, h:48, label:'FIGHTERS', go:()=>setScreen('char')});
   items.push({x:arcadeGoing?826:564, y:470, w:arcadeGoing?94:250, h:48, label:'HOME', go:()=>setScreen('home')});
   setMenu(items);
+}
+function rematch(){
+  menu={items:[],idx:0};
+  if (G.mode==='party'){
+    if (Net.status==='hosting') Net.startPartyStage(G.stage);
+    else Net.note('HOST MUST START THE REMATCH');
+    return;
+  }
+  startMatch();
 }
 function nextArcadeBout(){
   G.arcadeRound = (G.arcadeRound||1)+1;
