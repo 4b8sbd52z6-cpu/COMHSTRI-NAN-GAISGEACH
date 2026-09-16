@@ -1608,6 +1608,10 @@ const Net = {
       }
       return;
     }
+    if (data.type==='rematch-request' && this.status==='hosting' && G.mode==='party'){
+      this.startPartyStage(G.stage);
+      return;
+    }
     if (data.seat==null) return;
     this.receive(data);
   },
@@ -1884,7 +1888,8 @@ const CONTROLS = [
 function makeFighter(slot, port, spawn){
   const c = slot.char;
   return {
-    port, char:c, cpu:slot.type==='cpu', remote:G.mode==='party' && slot.type!=='cpu' && port!==Net.localSeat, netInput:null,
+    port, char:c, cpu:slot.type==='cpu' && !(G.mode==='party' && Net.seats[port]),
+    remote:G.mode==='party' && Net.seats[port] && port!==Net.localSeat, netInput:null,
     x:spawn[0], y:spawn[1], vx:0, vy:0, facing: spawn[0]<W/2?1:-1,
     w:c.w, h:c.h, onGround:false, jumps:2, pct:0, stocks:G.stocks,
     state:'fall', animT:0, atk:0, atkMax:1, atkDone:false, wpn:0,
@@ -2414,7 +2419,7 @@ function rematch(){
   menu={items:[],idx:0};
   if (G.mode==='party'){
     if (Net.status==='hosting') Net.startPartyStage(G.stage);
-    else Net.note('HOST MUST START THE REMATCH');
+    else { Net.broadcast({type:'rematch-request'}); Net.note('REMATCH REQUEST SENT TO HOST'); }
     return;
   }
   startMatch();
