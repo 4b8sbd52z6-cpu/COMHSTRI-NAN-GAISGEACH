@@ -1513,6 +1513,7 @@ const Net = {
   peer:null,
   localSeat:null,
   connections:[],
+  connectTimer:null,
   seats:[null,null,null,null], // seat -> player name
   log:[],
 
@@ -1527,7 +1528,7 @@ const Net = {
     this.code = this.makeCode(); this.status='hosting'; this.localSeat=0;
     this.seats=[ 'PLAYER 1', null, null, null ];
     this.note('ROOM OPENED  '+this.code);
-    this.peer = new Peer(this.peerId());
+    this.peer = new Peer(this.peerId(), {host:'0.peerjs.com', port:443, secure:true, path:'/'});
     this.peer.on('open', ()=>this.note('PLAYER 1 READY - WAITING FOR PLAYER 2'));
     this.peer.on('connection', conn=>this.acceptConnection(conn));
     this.peer.on('error', err=>this.note(err.type==='unavailable-id'?'ROOM CODE BUSY':'NETWORK ERROR'));
@@ -1541,7 +1542,12 @@ const Net = {
     this.code = code; this.status='connecting'; this.localSeat=null;
     this.seats=[ 'PLAYER 1', null, null, null ];
     this.note('CONNECTING AS PLAYER 2');
-    this.peer = new Peer();
+    this.connectTimer=setTimeout(()=>{
+      if (this.status==='connecting'){
+        this.closePeer(); this.status='offline'; this.note('CONNECTION TIMED OUT - TRY AGAIN');
+      }
+    }, 8000);
+    this.peer = new Peer(undefined, {host:'0.peerjs.com', port:443, secure:true, path:'/'});
     this.peer.on('open', ()=>{
       const conn = this.peer.connect(this.peerId(), {reliable:true, serialization:'json'});
       this.connections=[conn];
@@ -1550,7 +1556,10 @@ const Net = {
       conn.on('close', ()=>this.note('HOST DISCONNECTED'));
       conn.on('error', ()=>this.note('COULD NOT JOIN ROOM'));
     });
-    this.peer.on('error', err=>this.note(err.type==='peer-unavailable'?'ROOM NOT FOUND':'NETWORK ERROR'));
+    this.peer.on('error', err=>{
+      if (this.connectTimer){ clearTimeout(this.connectTimer); this.connectTimer=null; }
+      this.note(err.type==='peer-unavailable'?'ROOM NOT FOUND':'NETWORK ERROR');
+    });
     if (this.transport) this.transport.join(this.code);
   },
   acceptConnection(conn){
@@ -1570,6 +1579,7 @@ const Net = {
     if (!data) return;
     if (data.type==='hello' && this.status==='hosting') return;
     if (data.type==='welcome'){
+      if (this.connectTimer){ clearTimeout(this.connectTimer); this.connectTimer=null; }
       this.localSeat=data.seat; this.status='joined'; this.seats=data.seats||['PLAYER 1','PLAYER 2',null,null];
       this.seats[this.localSeat]='PLAYER 2'; this.note('YOU ARE PLAYER 2'); return;
     }
@@ -1597,6 +1607,7 @@ const Net = {
     if (this.status==='hosting') this.connections.forEach(item=>{ if (item!==conn && item.open) item.send(data); });
   },
   closePeer(){
+    if (this.connectTimer){ clearTimeout(this.connectTimer); this.connectTimer=null; }
     this.connections.forEach(conn=>conn.close()); this.connections=[];
     if (this.peer){ this.peer.destroy(); this.peer=null; }
   },
