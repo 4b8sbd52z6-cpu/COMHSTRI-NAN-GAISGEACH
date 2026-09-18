@@ -547,6 +547,9 @@ style.textContent = `
              background:#241609 !important; touch-action:none; -webkit-user-select:none; user-select:none;
              -webkit-tap-highlight-color:transparent; overscroll-behavior:none; }
   body{ position:fixed; inset:0; width:100%; align-items:center; justify-content:center; }
+  body::before{ content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+                background:repeating-linear-gradient(94deg,#241609 0 7px,#2c1b0d 7px 15px,#1d1207 15px 22px); }
+  #cabinet{ z-index:1; }
   body.compact #cabinet{ padding:0; border:0; box-shadow:none; background:none; }
   body.compact #cabinet::before{ display:none; }
   body.compact #hint{ display:none; }
