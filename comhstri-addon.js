@@ -591,6 +591,8 @@ document.addEventListener('fullscreenchange', fitScreen2);
 fitScreen2();
 
 function enterLandscape(){
+  manualLandscape = true;
+  fitScreen2();
   const el = document.documentElement;
   Audio8.unlock();
   const request = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -619,7 +621,7 @@ document.body.appendChild(fsbtn);
 
 const rotateNotice = document.createElement('div');
 rotateNotice.id = 'rotateNotice';
-rotateNotice.textContent = 'FLIP YOUR PHONE HORIZONTALLY';
+rotateNotice.textContent = 'TAP HERE, THEN FLIP YOUR PHONE HORIZONTALLY';
 rotateNotice.setAttribute('role', 'button');
 rotateNotice.tabIndex = 0;
 rotateNotice.addEventListener('click', enterLandscape);
