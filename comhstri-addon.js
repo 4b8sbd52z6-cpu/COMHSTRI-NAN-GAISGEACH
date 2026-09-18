@@ -550,7 +550,10 @@ style.textContent = `
   body::before{ content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
                 background:repeating-linear-gradient(94deg,#241609 0 7px,#2c1b0d 7px 15px,#1d1207 15px 22px); }
   #cabinet{ z-index:1; }
-  body.compact #cabinet{ padding:0; border:0; box-shadow:none; background:none; }
+  body.compact #cabinet{ position:fixed; inset:0; width:100vw; height:100dvh;
+                          display:flex; align-items:center; justify-content:center;
+                          padding:0; border:0; box-shadow:none;
+                          background:repeating-linear-gradient(180deg,#6b4622 0 6px,#5e3d1d 6px 13px,#754d26 13px 19px) !important; }
   body.compact #cabinet::before{ display:none; }
   body.compact #hint{ display:none; }
   body.compact canvas{ border:0; }
