@@ -259,30 +259,7 @@ function drawChargeVFX(p){
 /* hold the sword high and forward through the dash, and keep it
    planted in the hand the rest of the time */
 drawHeldWeapon = function(id, x, yF, facing, a){
-  if (id === 0 && (a.state === 'charge')){
-    const hx = x + facing*22, hy = yF - 44;
-    ctx.save();
-    ctx.translate(hx, hy);
-    ctx.rotate(facing * 1.15 + (facing<0 ? Math.PI : 0));
-    blit(CLAYMORE, WPN_PAL, -CLAYMORE[0].length*PX/2, -CLAYMORE.length*PX+6, PX, false);
-    ctx.restore();
-    return;
-  }
-  if (id === 0){
-    const wpn = a.weapon|0;
-    let map, from, to;
-    if (wpn===0){ map=CLAYMORE; from=-0.6; to=1.0; }
-    else if (wpn===1){ map=LOCHABER; from=-1.2; to=1.3; }
-    else { map=SGIAN; from=-0.1; to=0.8; }
-    const hx = x + facing*22, hy = yF - 44;
-    const angle = swingAngle(a, from, to);
-    ctx.save();
-    ctx.translate(hx, hy);
-    ctx.rotate(facing * (angle + 1.6) + (facing<0 ? Math.PI : 0));
-    blit(map, WPN_PAL, -map[0].length*PX/2, -map.length*PX+6, PX, false);
-    ctx.restore();
-    return;
-  }
+  if (id === 0) return;
   _drawHeldWeapon(id, x, yF, facing, a);
 };
 
