@@ -553,6 +553,14 @@ style.textContent = `
           font:bold 12px "Courier New",monospace; letter-spacing:1px;
           color:#f7e6bd; background:#6b4a26; border:2px solid #2a1a0a;
           border-radius:3px; padding:8px 12px; cursor:pointer; opacity:.85; }
+  #rotateNotice{ display:none; position:fixed; inset:0; z-index:30;
+                 align-items:center; justify-content:center; text-align:center;
+                 padding:24px; color:#f7e6bd; background:#120b06;
+                 font:bold 18px "Courier New",monospace; letter-spacing:2px; }
+  @media (orientation:portrait) and (max-width:900px){
+    #rotateNotice{ display:flex; }
+    #fsbtn{ display:none; }
+  }
 `;
 document.head.appendChild(style);
 
@@ -581,15 +589,25 @@ fsbtn.onclick = ()=>{
   const el = document.documentElement;
   Audio8.unlock();
   if (document.fullscreenElement || document.webkitFullscreenElement){
-    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) exit.call(document);
   } else {
-    (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
-    if (screen.orientation && screen.orientation.lock)
-      screen.orientation.lock('landscape').catch(()=>{});
+    const request = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (request){
+      Promise.resolve(request.call(el)).then(()=>{
+        if (screen.orientation && screen.orientation.lock)
+          return screen.orientation.lock('landscape').catch(()=>{});
+      }).catch(()=>{});
+    }
   }
   setTimeout(fitScreen2, 120);
 };
 document.body.appendChild(fsbtn);
+
+const rotateNotice = document.createElement('div');
+rotateNotice.id = 'rotateNotice';
+rotateNotice.textContent = 'FLIP YOUR PHONE HORIZONTALLY';
+document.body.appendChild(rotateNotice);
 
 /* =============================================================
    7. HUD EXTRAS  —  ability name, cooldown, ready state, item
