@@ -560,6 +560,7 @@ style.textContent = `
   @media (orientation:portrait) and (max-width:900px){
     #rotateNotice{ display:flex; }
   }
+  body.portrait-mobile #rotateNotice{ display:flex; }
 `;
 document.head.appendChild(style);
 
@@ -567,9 +568,14 @@ function compact(){
   return innerWidth < 900 || innerHeight < 620 ||
          !!(document.fullscreenElement || document.webkitFullscreenElement);
 }
+function isPortraitMobile(){
+  const touch = navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+  return touch && innerWidth <= 900 && innerHeight > innerWidth;
+}
 function fitScreen2(){
   const small = compact();
   document.body.classList.toggle('compact', small);
+  document.body.classList.toggle('portrait-mobile', isPortraitMobile());
   const pad = small ? 0 : 70;
   const s = Math.max(0.2, Math.min((innerWidth - pad) / W, (innerHeight - pad) / H));
   cv.style.width  = Math.floor(W*s) + 'px';
@@ -579,7 +585,8 @@ window.fitScreen = fitScreen2;
 addEventListener('resize', fitScreen2);
 addEventListener('orientationchange', ()=>setTimeout(fitScreen2, 200));
 if (window.visualViewport) visualViewport.addEventListener('resize', fitScreen2);
-if (screen.orientation) screen.orientation.addEventListener('change', fitScreen2);
+if (screen.orientation && screen.orientation.addEventListener)
+  screen.orientation.addEventListener('change', fitScreen2);
 document.addEventListener('fullscreenchange', fitScreen2);
 fitScreen2();
 
