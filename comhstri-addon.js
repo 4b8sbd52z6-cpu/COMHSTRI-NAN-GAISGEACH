@@ -542,10 +542,11 @@ function drawTouchPad(){
    ============================================================= */
 const style = document.createElement('style');
 style.textContent = `
-  html{ min-height:100%; background:#241609; }
+  html{ min-height:100%; background:#241609 !important; }
   html,body{ min-height:100%; height:100vh; height:100dvh;
-             background:#241609; touch-action:none; -webkit-user-select:none; user-select:none;
+             background:#241609 !important; touch-action:none; -webkit-user-select:none; user-select:none;
              -webkit-tap-highlight-color:transparent; overscroll-behavior:none; }
+  body{ position:fixed; inset:0; width:100%; align-items:center; justify-content:center; }
   body.compact #cabinet{ padding:0; border:0; box-shadow:none; background:none; }
   body.compact #cabinet::before{ display:none; }
   body.compact #hint{ display:none; }
