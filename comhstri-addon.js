@@ -261,7 +261,6 @@ function drawChargeVFX(p){
 drawHeldWeapon = function(id, x, yF, facing, a){
   if (id === 0 && (a.state === 'charge')){
     const hx = x + facing*22, hy = yF - 44;
-    rect(hx-4, hy-4, 9, 9, '#7a4a2a');
     ctx.save();
     ctx.translate(hx, hy);
     ctx.rotate(facing * 1.15 + (facing<0 ? Math.PI : 0));
@@ -277,7 +276,6 @@ drawHeldWeapon = function(id, x, yF, facing, a){
     else { map=SGIAN; from=-0.1; to=0.8; }
     const hx = x + facing*22, hy = yF - 44;
     const angle = swingAngle(a, from, to);
-    rect(hx-4, hy-4, 9, 9, '#7a4a2a');
     ctx.save();
     ctx.translate(hx, hy);
     ctx.rotate(facing * (angle + 1.6) + (facing<0 ? Math.PI : 0));
