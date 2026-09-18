@@ -559,7 +559,6 @@ style.textContent = `
                  font:bold 18px "Courier New",monospace; letter-spacing:2px; }
   @media (orientation:portrait) and (max-width:900px){
     #rotateNotice{ display:flex; }
-    #fsbtn{ display:none; }
   }
 `;
 document.head.appendChild(style);
@@ -579,8 +578,21 @@ function fitScreen2(){
 window.fitScreen = fitScreen2;
 addEventListener('resize', fitScreen2);
 addEventListener('orientationchange', ()=>setTimeout(fitScreen2, 200));
+if (window.visualViewport) visualViewport.addEventListener('resize', fitScreen2);
+if (screen.orientation) screen.orientation.addEventListener('change', fitScreen2);
 document.addEventListener('fullscreenchange', fitScreen2);
 fitScreen2();
+
+function enterLandscape(){
+  const el = document.documentElement;
+  Audio8.unlock();
+  const request = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!request) return;
+  Promise.resolve(request.call(el)).then(()=>{
+    if (screen.orientation && screen.orientation.lock)
+      return screen.orientation.lock('landscape').catch(()=>{});
+  }).catch(()=>{});
+}
 
 const fsbtn = document.createElement('button');
 fsbtn.id = 'fsbtn';
@@ -592,13 +604,7 @@ fsbtn.onclick = ()=>{
     const exit = document.exitFullscreen || document.webkitExitFullscreen;
     if (exit) exit.call(document);
   } else {
-    const request = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (request){
-      Promise.resolve(request.call(el)).then(()=>{
-        if (screen.orientation && screen.orientation.lock)
-          return screen.orientation.lock('landscape').catch(()=>{});
-      }).catch(()=>{});
-    }
+    enterLandscape();
   }
   setTimeout(fitScreen2, 120);
 };
@@ -607,6 +613,12 @@ document.body.appendChild(fsbtn);
 const rotateNotice = document.createElement('div');
 rotateNotice.id = 'rotateNotice';
 rotateNotice.textContent = 'FLIP YOUR PHONE HORIZONTALLY';
+rotateNotice.setAttribute('role', 'button');
+rotateNotice.tabIndex = 0;
+rotateNotice.addEventListener('click', enterLandscape);
+rotateNotice.addEventListener('keydown', e=>{
+  if (e.key === 'Enter' || e.key === ' ') enterLandscape();
+});
 document.body.appendChild(rotateNotice);
 
 /* =============================================================
