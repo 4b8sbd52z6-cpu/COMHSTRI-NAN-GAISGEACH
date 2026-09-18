@@ -542,7 +542,9 @@ function drawTouchPad(){
    ============================================================= */
 const style = document.createElement('style');
 style.textContent = `
-  html,body{ touch-action:none; -webkit-user-select:none; user-select:none;
+  html{ min-height:100%; background:#241609; }
+  html,body{ min-height:100%; height:100vh; height:100dvh;
+             background:#241609; touch-action:none; -webkit-user-select:none; user-select:none;
              -webkit-tap-highlight-color:transparent; overscroll-behavior:none; }
   body.compact #cabinet{ padding:0; border:0; box-shadow:none; background:none; }
   body.compact #cabinet::before{ display:none; }
@@ -564,6 +566,7 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+let manualLandscape = false;
 function compact(){
   return innerWidth < 900 || innerHeight < 620 ||
          !!(document.fullscreenElement || document.webkitFullscreenElement);
